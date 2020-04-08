@@ -14,8 +14,11 @@ pub const COLLAPSE_DOCS: Pass = Pass {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum DocFragmentKind {
+    /// A sugared doc would be `///` or `//!`
     Sugared,
+    /// A raw doc is a `#[doc]` attribute
     Raw,
+    /// `#[doc(include = "external_doc.md")]`
     Include,
 }
 
@@ -53,27 +56,38 @@ fn collapse(doc_strings: &mut Vec<DocFragment>) {
             let curr_kind = curr_frag.kind();
             let new_kind = frag.kind();
 
-            if curr_kind == DocFragmentKind::Include || curr_kind != new_kind {
-                match curr_frag {
-                    DocFragment::SugaredDoc(_, _, ref mut doc_string)
-                    | DocFragment::RawDoc(_, _, ref mut doc_string) => {
+            if curr_kind == DocFragmentKind::Include {
+                docs.push(curr_frag);
+                last_frag = Some(frag);
+            } else if curr_kind != new_kind {
+                match &mut curr_frag {
+                    DocFragment::SugaredDoc(_, _span, doc_string)
+                    | DocFragment::RawDoc(_, _span, doc_string) => {
                         // add a newline for extra padding between segments
                         doc_string.push('\n');
+
+                        // append the new frag to `last_frag`
+                        doc_string.push_str(frag.as_str());
+                        //*span = span.to(frag.span());
                     }
-                    _ => {}
+                    _ => unreachable!(),
                 }
+
                 docs.push(curr_frag);
                 last_frag = Some(frag);
             } else {
-                match curr_frag {
-                    DocFragment::SugaredDoc(_, ref mut span, ref mut doc_string)
-                    | DocFragment::RawDoc(_, ref mut span, ref mut doc_string) => {
+                match &mut curr_frag {
+                    DocFragment::SugaredDoc(_, span, doc_string)
+                    | DocFragment::RawDoc(_, span, doc_string) => {
+                        // each `DocFragment` ends with a new line
                         doc_string.push('\n');
+                        // append the new frag to `last_frag`
                         doc_string.push_str(frag.as_str());
                         *span = span.to(frag.span());
                     }
                     _ => unreachable!(),
                 }
+
                 last_frag = Some(curr_frag);
             }
         } else {
@@ -84,6 +98,7 @@ fn collapse(doc_strings: &mut Vec<DocFragment>) {
     if let Some(frag) = last_frag.take() {
         docs.push(frag);
     }
+
     *doc_strings = docs;
 }
 
